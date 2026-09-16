@@ -47,15 +47,24 @@ Install the Aspire CLI once:
 
 ```powershell
 dotnet tool install -g Aspire.Cli
+# If Aspire reports missing DCP or Dashboard paths:
+aspire setup --force
 ```
 
 Run the distributed application with:
 
 ```powershell
-aspire run --apphost ./src/Claims.AppHost/Claims.AppHost.csproj
+Set-Location "c:\Users\ellam\OneDrive\Documents\Sanlam\claims-processing-template"
+aspire run --apphost .\src\Claims.AppHost\Claims.AppHost.csproj
 ```
 
 Aspire will open its resource dashboard. The claims UI remains available at `http://localhost:5102/`.
+
+Alternatively, from the repository root, run the AppHost directly:
+
+```powershell
+dotnet run --project .\src\Claims.AppHost\Claims.AppHost.csproj
+```
 
 ## Demo journey
 
