@@ -4,8 +4,8 @@ This repository is a case-study template based on the supplied end-to-end and ne
 
 ## Projects
 
-- `Claims.Api` – Claims System API and local SQLite persistence.
-- `Claims.Bff` – frontend-oriented API facade.
+- `Claims.Backend.Api` – backend Claims API and local SQLite persistence.
+- `Claims.Dashboard` – browser dashboard and frontend-oriented API facade.
 - `Claims.Workflow.Functions` – Azure Durable Functions orchestration, Service Bus trigger, external event endpoints and workflow activities.
 - `Claims.PaymentGateway.Api` – payment abstraction with idempotency and dummy provider behaviour.
 - `Claims.ExternalSystems.Api` – dummy Client Registry, Policy Manager, Rules Engine and Fraud Detection APIs.
@@ -21,8 +21,8 @@ Production Azure mapping is documented in `docs/deployment-notes.md` and the Bic
 
 ## Suggested local ports
 
-Claims API: `http://localhost:5101`  
-BFF: `http://localhost:5102`  
+Claims Backend API: `http://localhost:5101`  
+Claims Dashboard: `http://localhost:5102`  
 Workflow Functions: `http://localhost:5103`  
 Payment Gateway: `http://localhost:5104`  
 Dummy External Systems: `http://localhost:5105`  
@@ -30,9 +30,9 @@ Notification Function: `http://localhost:5106`
 
 ## Claims operations demo
 
-The BFF serves a browser dashboard at `http://localhost:5102/`. On first startup, the Claims API seeds three deterministic mock claims, including `CL-002`, a R250,000 death claim in manual review with customer validation, policy validation, fraud review and two documents. Select a claim to inspect its workflow, then approve or reject `CL-002` to exercise the status API.
+The Claims Dashboard serves the browser UI at `http://localhost:5102/`. The Claims Backend API at `http://localhost:5101` is backend-only: its root returns service metadata, `/health` returns health status, and `/swagger` exposes API documentation. On first startup, the backend seeds three deterministic mock claims, including `CL-002`, a R250,000 death claim in manual review with customer validation, policy validation, fraud review and two documents. Select a claim to inspect its workflow, then approve or reject `CL-002` to exercise the status API.
 
-Start the Claims API and BFF for the dashboard. The API root redirects to the dashboard when both processes are running:
+Start the Claims Backend API and Claims Dashboard:
 
 ```powershell
 dotnet run --project src/Claims.Api/Claims.Api.csproj --urls http://localhost:5101
@@ -58,7 +58,7 @@ Set-Location "c:\Users\ellam\OneDrive\Documents\Sanlam\claims-processing-templat
 aspire run --apphost .\src\Claims.AppHost\Claims.AppHost.csproj
 ```
 
-Aspire will open its resource dashboard. The claims UI remains available at `http://localhost:5102/`.
+Aspire will open its resource dashboard. The Claims Dashboard remains available at `http://localhost:5102/`; the backend API is available at `http://localhost:5101/swagger`.
 
 Alternatively, from the repository root, run the AppHost directly:
 

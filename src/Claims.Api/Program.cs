@@ -79,7 +79,13 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.MapGet("/", () => Results.Redirect("http://localhost:5102/"));
+app.MapGet("/", () => Results.Ok(new
+{
+    service = "Claims Backend API",
+    description = "Backend claim management and persistence service.",
+    swagger = "/swagger",
+    health = "/health"
+}));
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.Run();
 
