@@ -32,7 +32,7 @@ Notification Function: `http://localhost:5106`
 
 The BFF serves a browser dashboard at `http://localhost:5102/`. On first startup, the Claims API seeds three deterministic mock claims, including `CL-002`, a R250,000 death claim in manual review with customer validation, policy validation, fraud review and two documents. Select a claim to inspect its workflow, then approve or reject `CL-002` to exercise the status API.
 
-Start the Claims API and BFF for the dashboard:
+Start the Claims API and BFF for the dashboard. The API root redirects to the dashboard when both processes are running:
 
 ```powershell
 dotnet run --project src/Claims.Api/Claims.Api.csproj --urls http://localhost:5101

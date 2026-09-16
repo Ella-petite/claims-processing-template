@@ -79,6 +79,7 @@ if (app.Environment.IsDevelopment())
     });
 }
 
+app.MapGet("/", () => Results.Redirect("http://localhost:5102/"));
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.Run();
 
