@@ -1,0 +1,10 @@
+{
+  "info": {"name":"Claims Processing Demo","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "item":[
+    {"name":"Create Claim","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"clientId\": \"CLIENT-001\",\n  \"policyId\": \"POL-001\",\n  \"claimType\": \"DEATH\",\n  \"amount\": 10000,\n  \"incidentDate\": \"2026-09-15T00:00:00Z\",\n  \"description\": \"Sample time-sensitive death claim\",\n  \"documentReferences\": [\"claim-form.pdf\"]\n}"},"url":"http://localhost:5101/api/claims"}},
+    {"name":"Create Higher-Value Claim","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"clientId\": \"CLIENT-001\",\n  \"policyId\": \"POL-001\",\n  \"claimType\": \"DEATH\",\n  \"amount\": 50000,\n  \"incidentDate\": \"2026-09-15T00:00:00Z\",\n  \"description\": \"Sample claim requiring review\"\n}"},"url":"http://localhost:5101/api/claims"}},
+    {"name":"Get Claim","request":{"method":"GET","url":"http://localhost:5101/api/claims/{{claimId}}"}},
+    {"name":"Start Workflow (Dev)","request":{"method":"POST","url":"http://localhost:5101/api/dev/workflow/{{claimId}}"}},
+    {"name":"Complete Payment (Dummy)","request":{"method":"POST","url":"http://localhost:5104/api/payments/{{paymentReference}}/complete"}}
+  ]
+}

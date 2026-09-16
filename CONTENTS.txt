@@ -1,0 +1,15 @@
+Claims Processing .NET case-study template
+
+src/Claims.Contracts
+src/Claims.Api
+src/Claims.Bff
+src/Claims.Workflow.Functions
+src/Claims.PaymentGateway.Api
+src/Claims.ExternalSystems.Api
+src/Claims.Notification.Function
+tests/Claims.Tests
+docs/
+infra/
+claims-postman.json
+
+Important: this is sample/case-study code, not a production-ready insurance claims platform.

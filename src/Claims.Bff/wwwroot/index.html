@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claimline | Claims operations</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">S</span><span>claimline</span></div>
+      <nav class="nav" aria-label="Primary navigation">
+        <a class="nav-item active" href="#claims"><span class="nav-icon">▦</span>Claims</a>
+        <a class="nav-item" href="#workflows"><span class="nav-icon">◒</span>Workflows</a>
+        <a class="nav-item" href="#systems"><span class="nav-icon">⌘</span>Systems</a>
+      </nav>
+      <div class="sidebar-foot"><div class="avatar">AM</div><div><strong>Alex Morgan</strong><small>Claims analyst</small></div><span class="more">•••</span></div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div><p class="eyebrow">Operations / Claims desk</p><h1>Claims overview</h1></div>
+        <div class="top-actions"><button class="icon-button" title="Refresh claims" id="refresh-button">↻</button><div class="environment"><span class="pulse"></span>Demo environment</div></div>
+      </header>
+
+      <section class="system-strip" id="systems" aria-label="Connected systems">
+        <div class="system-label"><span class="signal">◉</span><span><strong>Platform status</strong><small>All mock services connected</small></span></div>
+        <div class="system"><span class="system-dot green"></span><span>Claims API</span><small>healthy</small></div>
+        <div class="system"><span class="system-dot green"></span><span>Workflow</span><small>healthy</small></div>
+        <div class="system"><span class="system-dot green"></span><span>External systems</span><small>healthy</small></div>
+        <div class="system"><span class="system-dot green"></span><span>Payments</span><small>healthy</small></div>
+        <div class="system"><span class="system-dot green"></span><span>Notifications</span><small>healthy</small></div>
+      </section>
+
+      <section class="metrics" aria-label="Claim metrics">
+        <div class="metric"><span class="metric-label">Open claims</span><strong id="metric-open">--</strong><span class="metric-note neutral">Across all queues</span></div>
+        <div class="metric"><span class="metric-label">Manual review</span><strong id="metric-review">--</strong><span class="metric-note amber">Needs attention</span></div>
+        <div class="metric"><span class="metric-label">Paid this month</span><strong id="metric-paid">--</strong><span class="metric-note green">Demo ledger</span></div>
+        <div class="metric"><span class="metric-label">Total exposure</span><strong id="metric-exposure">--</strong><span class="metric-note neutral">Current portfolio</span></div>
+      </section>
+
+      <section class="workspace" id="claims">
+        <div class="claims-panel">
+          <div class="panel-heading"><div><p class="eyebrow">Live queue</p><h2>Claims</h2></div><button class="filter-button">All claims <span>⌄</span></button></div>
+          <div class="search"><span>⌕</span><input id="search-input" type="search" placeholder="Search claim, client or policy" aria-label="Search claims"></div>
+          <div class="claim-list" id="claim-list"><div class="loading">Loading claims...</div></div>
+        </div>
+
+        <div class="detail-panel" id="detail-panel"><div class="empty-state"><span class="empty-mark">◎</span><h2>Select a claim</h2><p>Choose a claim from the queue to inspect its workflow.</p></div></div>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
