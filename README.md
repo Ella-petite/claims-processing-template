@@ -39,6 +39,18 @@ dotnet run --project src/Claims.Api/Claims.Api.csproj --urls http://localhost:51
 dotnet run --project src/Claims.Bff/Claims.Bff.csproj --urls http://localhost:5102
 ```
 
+## .NET Aspire
+
+The solution includes a .NET Aspire AppHost at `src/Claims.AppHost`. It orchestrates the dashboard, Claims API, external systems, payment gateway and Functions projects, while exposing the Aspire dashboard for resource health and logs.
+
+Run the distributed application with:
+
+```powershell
+dotnet run --project src/Claims.AppHost/Claims.AppHost.csproj
+```
+
+Aspire will open its resource dashboard. The claims UI remains available at `http://localhost:5102/`.
+
 ## Demo journey
 
 1. Start the external systems API.
