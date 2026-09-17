@@ -184,6 +184,10 @@ app.MapGet("/api/client/services", async (IHttpClientFactory factory, IConfigura
     return Results.Ok(result);
 });
 
+// Audit trail proxy endpoint
+app.MapGet("/api/client/claims/audit", async (IHttpClientFactory factory, HttpContext http, CancellationToken ct) =>
+    await ProxyAsync(factory.CreateClient("ClaimsApi"), HttpMethod.Get, $"/api/claims/audit{http.Request.QueryString}", null, ct));
+
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "Claims.Bff" }));
 app.MapGet("/", () => Results.Ok(new { service = "Claims.Bff", role = "Frontend API facade only", ui = "Claims.Web" }));
 app.Run();

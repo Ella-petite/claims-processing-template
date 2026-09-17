@@ -1,0 +1,131 @@
+@page "/claimaudit"
+@using System.Net.Http.Json
+@using Claims.Contracts.Models
+@inject HttpClient Http
+
+<h3 class="title">Audit Trail</h3>
+
+<div class="filters glass-card">
+    <label>Status:
+        <select @bind="selectedStatus">
+            <option value="">All</option>
+            <option value="Submitted">Submitted</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+        </select>
+    </label>
+    <label>From:
+        <input type="date" @bind="startDate" />
+    </label>
+    <label>To:
+        <input type="date" @bind="endDate" />
+    </label>
+    <button class="btn btn-primary" @onclick="LoadAudit">Apply</button>
+</div>
+
+@if (auditData == null)
+{
+    <p>Loading…</p>
+}
+else if (!auditData.Any())
+{
+    <p>No claims found.</p>
+}
+else
+{
+    <table class="audit-table glass-card">
+        <thead>
+            <tr>
+                <th @onclick="() => SortBy(nameof(ClaimAuditDto.ClaimId))">ID</th>
+                <th @onclick="() => SortBy(nameof(ClaimAuditDto.Status))">Status</th>
+                <th @onclick="() => SortBy(nameof(ClaimAuditDto.Amount))">Amount</th>
+                <th @onclick="() => SortBy(nameof(ClaimAuditDto.Created))">Created</th>
+                <th>Details</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var claim in SortedData)
+            {
+                <tr class="clickable" @onclick="() => ToggleExpand(claim.ClaimId)">
+                    <td>@claim.ClaimId</td>
+                    <td>@claim.Status</td>
+                    <td>@claim.Amount @claim.Currency</td>
+                    <td>@claim.Created.ToString("yyyy-MM-dd")</td>
+                    <td>@(expandedIds.Contains(claim.ClaimId) ? "▾" : "▸")</td>
+                </tr>
+                @if (expandedIds.Contains(claim.ClaimId))
+                {
+                    <tr class="detail-row">
+                        <td colspan="5">
+                            <ul class="history-list">
+                                @foreach (var h in claim.History.OrderBy(h => h.At))
+                                {
+                                    <li><strong>@h.At: </strong>@h.Status – @h.Source @if (!string.IsNullOrWhiteSpace(h.Note)) { <em>(@h.Note)</em> }</li>
+                                }
+                            </ul>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<ClaimAuditDto>? auditData;
+    private string? selectedStatus;
+    private DateTime? startDate;
+    private DateTime? endDate;
+    private string sortColumn = nameof(ClaimAuditDto.ClaimId);
+    private bool sortAscending = true;
+    private HashSet<Guid> expandedIds = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAudit();
+    }
+
+    private async Task LoadAudit()
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(selectedStatus))
+            query.Add($"status={selectedStatus}");
+        if (startDate.HasValue)
+            query.Add($"startDate={startDate:yyyy-MM-dd}");
+        if (endDate.HasValue)
+            query.Add($"endDate={endDate:yyyy-MM-dd}");
+        var qs = query.Any() ? "?" + string.Join("&", query) : string.Empty;
+        auditData = await Http.GetFromJsonAsync<List<ClaimAuditDto>>("/api/client/claims/audit" + qs);
+    }
+
+    private IEnumerable<ClaimAuditDto> SortedData => sortAscending
+        ? auditData!.OrderBy(c => GetPropertyValue(c, sortColumn))
+        : auditData!.OrderByDescending(c => GetPropertyValue(c, sortColumn));
+
+    private object? GetPropertyValue(ClaimAuditDto claim, string property) =>
+        property switch
+        {
+            nameof(ClaimAuditDto.ClaimId) => claim.ClaimId,
+            nameof(ClaimAuditDto.Status) => claim.Status,
+            nameof(ClaimAuditDto.Amount) => claim.Amount,
+            nameof(ClaimAuditDto.Created) => claim.Created,
+            _ => null
+        };
+
+    private void SortBy(string column)
+    {
+        if (sortColumn == column)
+            sortAscending = !sortAscending;
+        else
+        {
+            sortColumn = column;
+            sortAscending = true;
+        }
+    }
+
+    private void ToggleExpand(Guid id)
+    {
+        if (!expandedIds.Add(id))
+            expandedIds.Remove(id);
+    }
+}
