@@ -10,10 +10,10 @@ public class ClaimAuditDto
     public string? WorkflowInstanceId { get; set; }
     public DateTime Created { get; set; }
     public DateTime Updated { get; set; }
-    public List<ClaimHistoryDto> History { get; set; } = new();
+    public List<ClaimAuditHistoryDto> History { get; set; } = new();
 }
 
-public class ClaimHistoryDto
+public class ClaimAuditHistoryDto
 {
     public DateTimeOffset At { get; set; }
     public string Status { get; set; } = "";

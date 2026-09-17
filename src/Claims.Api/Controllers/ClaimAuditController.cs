@@ -33,12 +33,12 @@ namespace Claims.Api.Controllers
 
             if (filter?.StartDate != null)
             {
-                query = query.Where(c => c.Created >= filter.StartDate);
+                query = query.Where(c => c.IncidentDate >= filter.StartDate);
             }
 
             if (filter?.EndDate != null)
             {
-                query = query.Where(c => c.Created <= filter.EndDate);
+                query = query.Where(c => c.IncidentDate <= filter.EndDate);
             }
 
             var result = await query.Select(c => new ClaimAuditDto
@@ -51,7 +51,7 @@ namespace Claims.Api.Controllers
                 WorkflowInstanceId = c.WorkflowInstanceId,
                 Created = c.IncidentDate,
                 Updated = c.IncidentDate, // Placeholder; could be a modified timestamp if present
-                History = c.History.Select(h => new ClaimHistoryDto
+                History = c.History.Select(h => new ClaimAuditHistoryDto
                 {
                     At = h.At,
                     Status = h.Status.ToString(),
