@@ -1,3 +1,10 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Claims.Notification.Function;
 
-new HostBuilder().ConfigureFunctionsWorkerDefaults().Build().Run();
+var host = new HostBuilder()
+    .ConfigureFunctionsWebApplication()
+    .ConfigureServices(services => services.AddSingleton<NotificationStore>())
+    .Build();
+
+host.Run();

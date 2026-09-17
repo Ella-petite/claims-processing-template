@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 using Claims.Contracts.Models;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
@@ -5,21 +8,35 @@ using Microsoft.DurableTask;
 using Microsoft.DurableTask.Client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using System.Net;
-using System.Net.Http.Json;
-using System.Text.Json;
 
 namespace Claims.Workflow.Functions;
 
-public sealed class ClaimsFunctions(IHttpClientFactory httpClientFactory, IConfiguration config, ILogger<ClaimsFunctions> logger)
+public sealed class ClaimsFunctions(
+    IHttpClientFactory httpClientFactory,
+    IConfiguration configuration,
+    ILogger<ClaimsFunctions> logger)
 {
     [Function("ClaimSubmitted")]
     public async Task ClaimSubmitted(
-        [ServiceBusTrigger("claims", Connection = "ServiceBusConnection")] string body,
-        [DurableClient] DurableTaskClient durableClient)
+        [ServiceBusTrigger("claim-workflow", Connection = "ServiceBusConnection")] string body,
+        [DurableClient] DurableTaskClient durableClient,
+        CancellationToken cancellationToken)
     {
-        var message = JsonSerializer.Deserialize<ClaimSubmittedEvent>(body) ?? throw new InvalidOperationException("Invalid claim.submitted message.");
-        await durableClient.ScheduleNewOrchestrationInstanceAsync("ClaimsOrchestration", message);
+        var message = JsonSerializer.Deserialize<ClaimSubmittedEvent>(body)
+            ?? throw new InvalidOperationException("Invalid claim.submitted message.");
+
+        var instanceId = message.ClaimId.ToString("N");
+        var options = new StartOrchestrationOptions(instanceId, null);
+        try
+        {
+            await durableClient.ScheduleNewOrchestrationInstanceAsync("ClaimsOrchestration", message, options, cancellationToken);
+        }
+        catch (Exception ex) when (ex.GetType().Name.Contains("AlreadyExists", StringComparison.Ordinal))
+        {
+            logger.LogInformation("Workflow already exists for claim {ClaimId}.", message.ClaimId);
+        }
+
+        logger.LogInformation("claim.submitted consumed for {ClaimId} with workflow instance {InstanceId}.", message.ClaimId, instanceId);
     }
 
     [Function("StartClaimsWorkflow")]
@@ -29,7 +46,11 @@ public sealed class ClaimsFunctions(IHttpClientFactory httpClientFactory, IConfi
     {
         var input = await req.ReadFromJsonAsync<ClaimSubmittedEvent>();
         if (input is null) return req.CreateResponse(HttpStatusCode.BadRequest);
-        var instanceId = await durableClient.ScheduleNewOrchestrationInstanceAsync("ClaimsOrchestration", input);
+
+        var instanceId = await durableClient.ScheduleNewOrchestrationInstanceAsync(
+            "ClaimsOrchestration",
+            input);
+
         var response = req.CreateResponse(HttpStatusCode.Accepted);
         await response.WriteAsJsonAsync(new { instanceId });
         return response;
@@ -44,7 +65,9 @@ public sealed class ClaimsFunctions(IHttpClientFactory httpClientFactory, IConfi
         var payload = await req.ReadFromJsonAsync<PaymentCompletedEvent>();
         if (payload is null) return req.CreateResponse(HttpStatusCode.BadRequest);
         await durableClient.RaiseEventAsync(instanceId, "PaymentCompleted", payload);
-        return req.CreateResponse(HttpStatusCode.Accepted);
+        var response = req.CreateResponse(HttpStatusCode.Accepted);
+        await response.WriteAsJsonAsync(new { accepted = true, instanceId, eventName = "PaymentCompleted" });
+        return response;
     }
 
     [Function("RaiseAnalystDecision")]
@@ -55,79 +78,116 @@ public sealed class ClaimsFunctions(IHttpClientFactory httpClientFactory, IConfi
     {
         var body = await req.ReadFromJsonAsync<AnalystDecisionRequest>();
         if (body is null) return req.CreateResponse(HttpStatusCode.BadRequest);
-        await durableClient.RaiseEventAsync(instanceId, "AnalystDecision", body.Approved);
-        return req.CreateResponse(HttpStatusCode.Accepted);
+        await durableClient.RaiseEventAsync(instanceId, "AnalystDecision", body);
+        var response = req.CreateResponse(HttpStatusCode.Accepted);
+        await response.WriteAsJsonAsync(new { accepted = true, instanceId, eventName = "AnalystDecision" });
+        return response;
     }
 
     [Function("ClaimsOrchestration")]
-    public static async Task RunOrchestration([OrchestrationTrigger] TaskOrchestrationContext context, ClaimSubmittedEvent input)
+    public async Task RunOrchestration(
+        [OrchestrationTrigger] TaskOrchestrationContext context,
+        ClaimSubmittedEvent input)
     {
-        var customer = await context.CallActivityAsync<ValidationResult>("ValidateCustomer", input);
+        var correlationId = input.CorrelationId;
+        await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.ValidatingCustomer, "Workflow", "Starting customer validation.", null, context.InstanceId, correlationId));
+
+        var customer = await context.CallActivityAsync<ClientValidationResult>("ValidateCustomer", input);
+        await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(
+            input.ClaimId, ClaimStatus.ValidatingCustomer, "RegistrationSystem",
+            customer.Success
+                ? $"Customer validated: {customer.ClientName} ({customer.ClientTier})."
+                : customer.Reason ?? "Customer validation failed.",
+            null, context.InstanceId, correlationId));
         if (!customer.Success)
         {
-            await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.Rejected, "RegistrationSystem", customer.Reason));
+            await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.Rejected, "RegistrationSystem", customer.Reason, null, context.InstanceId, correlationId));
             return;
         }
 
-        var policy = await context.CallActivityAsync<ValidationResult>("ValidatePolicy", input);
+        await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.ValidatingPolicy, "Workflow", "Starting policy validation.", null, context.InstanceId, correlationId));
+        var policy = await context.CallActivityAsync<PolicyValidationResult>("ValidatePolicy", input);
+        await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(
+            input.ClaimId, ClaimStatus.ValidatingPolicy, "PolicyManager",
+            policy.Success
+                ? $"Policy {policy.PolicyNumber} / {policy.Plan} validated. Coverage limit R {policy.CoverageLimit:N2}; excess R {policy.Excess:N2}."
+                : policy.Reason ?? "Policy validation failed.",
+            null, context.InstanceId, correlationId));
         if (!policy.Success)
         {
-            await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.Rejected, "PolicyManager", policy.Reason));
+            await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.Rejected, "PolicyManager", policy.Reason, null, context.InstanceId, correlationId));
             return;
         }
 
-        var fraud = await context.CallActivityAsync<FraudResult>("RunFraudAndRules", input);
-        if (fraud.RequiresManualReview)
+        await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.CheckingRules, "Workflow", "Applying business rules.", null, context.InstanceId, correlationId));
+        var rules = await context.CallActivityAsync<RulesResult>("RunRules", input);
+        await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(
+            input.ClaimId, ClaimStatus.CheckingRules, "RulesEngine",
+            rules.RequiresManualReview ? (rules.Reason ?? "Rule requires manual review.") : "Business rules passed; no exception raised.",
+            null, context.InstanceId, correlationId));
+
+        await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.CheckingFraud, "Workflow", "Checking fraud and risk.", null, context.InstanceId, correlationId));
+        var fraud = await context.CallActivityAsync<FraudResult>("RunFraud", input);
+        await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(
+            input.ClaimId, ClaimStatus.CheckingFraud, "FraudDetection",
+            $"Risk score {fraud.RiskScore}. {fraud.Reason}", null, context.InstanceId, correlationId));
+
+        if (rules.RequiresManualReview || fraud.RequiresManualReview)
         {
-            await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.UnderReview, "Rules/Fraud", fraud.Reason));
-            var analystDecision = await context.WaitForExternalEvent<bool>("AnalystDecision");
-            if (!analystDecision)
+            var reason = rules.RequiresManualReview ? rules.Reason : fraud.Reason;
+            await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.UnderReview, "Rules/Fraud", reason, null, context.InstanceId, correlationId));
+            var decision = await context.WaitForExternalEvent<AnalystDecisionRequest>("AnalystDecision");
+            if (!decision.Approved)
             {
-                await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.Rejected, "ClaimsAnalyst", "Manual review declined the claim."));
+                await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.Rejected, "ClaimsAnalyst", decision.Note ?? "Claim rejected during manual review.", null, context.InstanceId, correlationId));
                 return;
             }
         }
 
-        await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.Approved, "Workflow", "Claim approved for payment."));
-        var payment = await context.CallActivityAsync<PaymentResponse>("InitiatePayment", new PaymentRequest(input.ClaimId, input.Amount, "ZAR", $"claim-{input.ClaimId}"));
-        await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.PaymentPending, "PaymentGateway", "Waiting for provider result.", payment.PaymentReference));
+        await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.Approved, "Workflow", "Claim approved for payment.", null, context.InstanceId, correlationId));
+        var payment = await context.CallActivityAsync<PaymentResponse>(
+            "InitiatePayment",
+            new PaymentRequest(input.ClaimId, input.Amount, "ZAR", $"claim-{input.ClaimId:N}", context.InstanceId));
 
+        await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, ClaimStatus.PaymentPending, "PaymentGateway", "Payment initiated; waiting for provider callback.", payment.PaymentReference, context.InstanceId, correlationId));
         var completed = await context.WaitForExternalEvent<PaymentCompletedEvent>("PaymentCompleted");
         var finalStatus = completed.Status.Equals("completed", StringComparison.OrdinalIgnoreCase) ? ClaimStatus.Paid : ClaimStatus.Failed;
-        await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, finalStatus, "PaymentGateway", completed.Status, completed.PaymentReference));
-        await context.CallActivityAsync("SendNotification", new NotificationEvent(input.ClaimId, "ClaimUpdated", $"Claim status changed to {finalStatus}."));
+        await context.CallActivityAsync("UpdateClaimStatus", new StatusCommand(input.ClaimId, finalStatus, "PaymentGateway", $"Payment provider returned '{completed.Status}'.", completed.PaymentReference, context.InstanceId, correlationId));
     }
 
     [Function("ValidateCustomer")]
-    public async Task<ValidationResult> ValidateCustomer([ActivityTrigger] ClaimSubmittedEvent input)
+    public async Task<ClientValidationResult> ValidateCustomer([ActivityTrigger] ClaimSubmittedEvent input)
     {
-        var response = await External().PostAsJsonAsync("/api/registry/validate", new { input.ClientId });
-        return await Read<ValidationResult>(response);
+        var response = await CreateClient(configuration["Registration:BaseUrl"] ?? "http://localhost:5108").PostAsJsonAsync("/api/registry/validate", new { input.ClientId });
+        return await ReadAsync<ClientValidationResult>(response);
     }
 
     [Function("ValidatePolicy")]
-    public async Task<ValidationResult> ValidatePolicy([ActivityTrigger] ClaimSubmittedEvent input)
+    public async Task<PolicyValidationResult> ValidatePolicy([ActivityTrigger] ClaimSubmittedEvent input)
     {
-        var response = await External().PostAsJsonAsync("/api/policy/validate", new { input.PolicyId, input.ClaimType, input.Amount });
-        return await Read<ValidationResult>(response);
+        var response = await CreateClient(configuration["Policy:BaseUrl"] ?? "http://localhost:5109").PostAsJsonAsync("/api/policy/validate", new { input.PolicyId, input.ClaimType, input.Amount });
+        return await ReadAsync<PolicyValidationResult>(response);
     }
 
-    [Function("RunFraudAndRules")]
-    public async Task<FraudResult> RunFraudAndRules([ActivityTrigger] ClaimSubmittedEvent input)
+    [Function("RunRules")]
+    public async Task<RulesResult> RunRules([ActivityTrigger] ClaimSubmittedEvent input)
     {
-        var ruleResponse = await External().PostAsJsonAsync("/api/rules/evaluate", new { input.ClaimType, input.Amount });
-        var ruleResult = await Read<FraudResult>(ruleResponse);
-        if (ruleResult.RequiresManualReview) return ruleResult;
+        var response = await CreateClient(configuration["Rules:BaseUrl"] ?? "http://localhost:5110").PostAsJsonAsync("/api/rules/evaluate", new { input.ClaimType, input.Amount });
+        return await ReadAsync<RulesResult>(response);
+    }
 
-        var fraudResponse = await External().PostAsJsonAsync("/api/fraud/score", new { input.ClientId, input.Amount, input.ClaimType });
-        return await Read<FraudResult>(fraudResponse);
+    [Function("RunFraud")]
+    public async Task<FraudResult> RunFraud([ActivityTrigger] ClaimSubmittedEvent input)
+    {
+        var response = await CreateClient(configuration["Fraud:BaseUrl"] ?? "http://localhost:5111").PostAsJsonAsync("/api/fraud/score", new { input.ClientId, input.Amount, input.ClaimType });
+        return await ReadAsync<FraudResult>(response);
     }
 
     [Function("InitiatePayment")]
     public async Task<PaymentResponse> InitiatePayment([ActivityTrigger] PaymentRequest input)
     {
         var response = await Payment().PostAsJsonAsync("/api/payments", input);
-        return await Read<PaymentResponse>(response);
+        return await ReadAsync<PaymentResponse>(response);
     }
 
     [Function("UpdateClaimStatus")]
@@ -135,31 +195,50 @@ public sealed class ClaimsFunctions(IHttpClientFactory httpClientFactory, IConfi
     {
         var response = await Claims().PostAsJsonAsync($"/api/claims/{command.ClaimId}/status", new
         {
-            command.Status, command.Source, command.Note, command.PaymentReference
+            command.Status,
+            command.Source,
+            command.Note,
+            command.PaymentReference,
+            WorkflowInstanceId = command.WorkflowInstanceId,
+            command.CorrelationId
         });
         response.EnsureSuccessStatusCode();
         logger.LogInformation("Claim {ClaimId} -> {Status}", command.ClaimId, command.Status);
     }
 
-    [Function("SendNotification")]
-    public async Task SendNotification([ActivityTrigger] NotificationEvent input)
+    private HttpClient Claims() => CreateClient(configuration["ClaimsApi:BaseUrl"] ?? "http://localhost:5101");
+    private HttpClient Payment() => CreateClient(configuration["PaymentGateway:BaseUrl"] ?? "http://localhost:5104");
+    private HttpClient CreateClient(string baseUrl)
     {
-        var response = await Notifications().PostAsJsonAsync("/api/notifications", input);
-        response.EnsureSuccessStatusCode();
+        var client = httpClientFactory.CreateClient();
+        client.BaseAddress = new Uri(baseUrl);
+        return client;
     }
 
-    private HttpClient External() => CreateClient(config["ExternalSystems:BaseUrl"] ?? "http://localhost:5105");
-    private HttpClient Claims() => CreateClient(config["ClaimsApi:BaseUrl"] ?? "http://localhost:5101");
-    private HttpClient Payment() => CreateClient(config["PaymentGateway:BaseUrl"] ?? "http://localhost:5104");
-    private HttpClient Notifications() => CreateClient(config["NotificationService:BaseUrl"] ?? "http://localhost:5106");
-    private HttpClient CreateClient(string baseUrl) { var client = httpClientFactory.CreateClient(); client.BaseAddress = new Uri(baseUrl); return client; }
-
-    private static async Task<T> Read<T>(HttpResponseMessage response)
+    private static async Task<T> ReadAsync<T>(HttpResponseMessage response)
     {
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<T>() ?? throw new InvalidOperationException("Empty downstream response.");
+        return await response.Content.ReadFromJsonAsync<T>()
+            ?? throw new InvalidOperationException("Downstream response was empty.");
     }
 
-    public sealed record StatusCommand(Guid ClaimId, ClaimStatus Status, string Source, string? Note, string? PaymentReference = null);
-    public sealed record AnalystDecisionRequest(bool Approved);
+    public sealed record StatusCommand(
+        Guid ClaimId,
+        ClaimStatus Status,
+        string Source,
+        string? Note,
+        string? PaymentReference,
+        string? WorkflowInstanceId,
+        string CorrelationId);
+}
+
+public static class ClaimsFunctionsHealth
+{
+    [Function("WorkflowHealth")]
+    public static async Task<HttpResponseData> Health([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "health")] HttpRequestData req)
+    {
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new { status = "ok", service = "Claims.Workflow.Functions" });
+        return response;
+    }
 }

@@ -1,0 +1,9 @@
+{
+  "clientId": "CLIENT-003",
+  "policyId": "POL-003",
+  "claimType": "Hospitalisation",
+  "amount": 10000,
+  "incidentDate": "2026-09-15T00:00:00Z",
+  "description": "Hospitalisation benefit claim submitted through the client web form.",
+  "documentReferences": []
+}

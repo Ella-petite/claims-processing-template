@@ -1,37 +1,54 @@
-@description('Sample only. Split into modules and add identities, diagnostics and networking')
-param location string = resourceGroup().location
+// Starter production mapping. This file is intentionally non-production and requires environment-specific
+// names, SKUs, networking and identity configuration before deployment.
+targetScope = 'resourceGroup'
+
+@description('Environment name')
 param environment string = 'dev'
 
-resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
-  name: 'claims-plan-${environment}'
-  location: location
-  sku: { name: 'B1', tier: 'Basic' }
-}
+@description('Azure region')
+param location string = resourceGroup().location
 
-resource claimsApi 'Microsoft.Web/sites@2023-12-01' = {
-  name: 'claims-api-${uniqueString(resourceGroup().id, environment)}'
+@description('Globally unique storage account name')
+param storageAccountName string
+
+@description('Service Bus namespace name')
+param serviceBusName string
+
+resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  name: storageAccountName
   location: location
-  kind: 'app'
+  sku: { name: 'Standard_LRS' }
+  kind: 'StorageV2'
   properties: {
-    serverFarmId: plan.id
-    siteConfig: { alwaysOn: true }
+    minimumTlsVersion: 'TLS1_2'
+    allowBlobPublicAccess: false
+    supportsHttpsTrafficOnly: true
   }
 }
 
 resource serviceBus 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
-  name: 'claims-bus-${uniqueString(resourceGroup().id, environment)}'
+  name: serviceBusName
   location: location
   sku: { name: 'Standard', tier: 'Standard' }
 }
 
-resource claimsQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+resource workflowQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  name: 'claim-workflow'
   parent: serviceBus
-  name: 'claims'
   properties: {
     maxDeliveryCount: 10
     deadLetteringOnMessageExpiration: true
   }
 }
 
-// Add Azure SQL, Storage, Key Vault, Functions, APIM, Front Door,
-// VNet/private endpoints, NAT Gateway and diagnostics through dedicated modules.
+resource notificationQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  name: 'claim-notifications'
+  parent: serviceBus
+  properties: {
+    maxDeliveryCount: 10
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
+output storageAccountId string = storage.id
+output serviceBusId string = serviceBus.id

@@ -1,0 +1,37 @@
+@inherits LayoutComponentBase
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-mark">C</div>
+            <div>
+                <strong>Claims Hub</strong>
+                <small>Processing Platform</small>
+            </div>
+        </div>
+        <nav>
+            <NavLink href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
+            <NavLink href="/claims/new">Submit Claim</NavLink>
+            <NavLink href="/analyst/review">Analyst Review</NavLink>
+        </nav>
+        <div class="sidebar-footer">
+            <span class="status-dot"></span>
+            Local demo environment
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <header class="topbar">
+            <div>
+                <span class="eyebrow">Claims Processing Team</span>
+                <span class="topbar-title">End-to-End Claims Platform</span>
+            </div>
+            <div class="topbar-actions">
+                <span class="pill">Mock services enabled</span>
+            </div>
+        </header>
+        <section class="content-wrap">
+            @Body
+        </section>
+    </main>
+</div>

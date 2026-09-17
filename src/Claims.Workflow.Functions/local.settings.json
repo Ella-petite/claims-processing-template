@@ -1,0 +1,14 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "ServiceBusConnection": "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true",
+    "Registration__BaseUrl": "http://localhost:5108",
+    "Policy__BaseUrl": "http://localhost:5109",
+    "Rules__BaseUrl": "http://localhost:5110",
+    "Fraud__BaseUrl": "http://localhost:5111",
+    "ClaimsApi__BaseUrl": "http://localhost:5101",
+    "PaymentGateway__BaseUrl": "http://localhost:5104"
+  }
+}

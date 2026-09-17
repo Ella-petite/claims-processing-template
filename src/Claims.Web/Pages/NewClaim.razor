@@ -1,0 +1,166 @@
+@page "/claims/new"
+@inject ClaimsClient Client
+@inject NavigationManager Navigation
+
+<PageTitle>Submit Claim</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <span class="eyebrow">Client / submission channel</span>
+        <h1>Submit a claim</h1>
+        <p>Enter the claim details, attach supporting documents, and submit the claim into the automated journey.</p>
+    </div>
+</div>
+
+@if (referenceData is null)
+{
+    <div class="loading">Loading reference data…</div>
+}
+else
+{
+    <section class="panel scenario-panel">
+        <div class="panel-header">
+            <div><h2>Demo scenarios</h2><span>Load representative data to exercise different workflow branches.</span></div>
+        </div>
+        <div class="scenario-actions">
+            <button class="btn btn-secondary" @onclick="@(() => LoadPreset("straight"))">Straight-through</button>
+            <button class="btn btn-secondary" @onclick="@(() => LoadPreset("manual"))">Manual review</button>
+            <button class="btn btn-secondary" @onclick="@(() => LoadPreset("validation"))">Validation failure</button>
+        </div>
+    </section>
+
+    <section class="form-layout">
+        <div class="panel">
+            <div class="panel-header"><div><h2>Claim information</h2><span>The UI sends multipart form data to Claims.Bff.</span></div></div>
+            <div class="form-grid">
+                <label>Client ID
+                    <input list="client-options" @bind="clientId" placeholder="CLIENT-001" />
+                    <datalist id="client-options">
+                        @foreach (var client in Clients) { <option value="@client.ClientId">@client.ClientName (@client.Tier)</option> }
+                    </datalist>
+                </label>
+                <label>Policy ID
+                    <input list="policy-options" @bind="policyId" placeholder="POL-001" />
+                    <datalist id="policy-options">
+                        @foreach (var policy in Policies) { <option value="@policy.PolicyId">@policy.Plan · Limit R @policy.CoverageLimit.ToString("N0")</option> }
+                    </datalist>
+                </label>
+                <label>Claim type
+                    <select @bind="claimType">
+                        <option>Accidental damage</option>
+                        <option>Death</option>
+                        <option>Hospitalisation</option>
+                        <option>Disability</option>
+                        <option>Complex</option>
+                    </select>
+                </label>
+                <label>Claim amount (ZAR)<input type="number" min="1" step="0.01" @bind="amount" /></label>
+                <label>Incident date<input type="date" @bind="incidentDate" /></label>
+                <label class="full">Description<textarea rows="5" @bind="description"></textarea></label>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header"><div><h2>Supporting documents</h2><span>Upload evidence for Blob Storage and mock Document Intelligence.</span></div></div>
+            <InputFile OnChange="OnFilesSelected" multiple accept=".pdf,.png,.jpg,.jpeg" class="file-input" />
+            <div class="upload-help">Up to 5 files, 10 MB each. Demo supports PDF, JPG and PNG uploads.</div>
+            @if (selectedFiles.Count > 0)
+            {
+                <div class="file-list">
+                    @foreach (var file in selectedFiles)
+                    {
+                        <div class="file-row"><span>@file.Name</span><small>@(Math.Round(file.Size / 1024d, 0)) KB</small></div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="empty-state small"><p>No documents selected.</p></div>
+            }
+        </div>
+
+        <div class="panel full-panel">
+            @if (!string.IsNullOrWhiteSpace(error)) { <div class="alert error">@error</div> }
+            <div class="form-actions">
+                <a href="/" class="btn btn-secondary">Cancel</a>
+                <button class="btn btn-primary" @onclick="SubmitAsync" disabled="@submitting">@(submitting ? "Submitting…" : "Submit claim")</button>
+            </div>
+        </div>
+    </section>
+}
+
+@code {
+    private string clientId = "CLIENT-003";
+    private string policyId = "POL-003";
+    private string claimType = "Hospitalisation";
+    private decimal amount = 10000;
+    private DateTime incidentDate = DateTime.Today;
+    private string description = "Hospitalisation benefit claim submitted through the client web form.";
+    private IReadOnlyList<IBrowserFile> selectedFiles = [];
+    private bool submitting;
+    private string? error;
+    private ReferenceDataDto? referenceData;
+
+    private IEnumerable<ClientReferenceDto> Clients => referenceData?.Clients ?? [];
+    private IEnumerable<PolicyReferenceDto> Policies => referenceData?.Policies ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        referenceData = await Client.GetReferenceDataAsync();
+    }
+
+    private void LoadPreset(string preset)
+    {
+        selectedFiles = [];
+        error = null;
+        switch (preset)
+        {
+            case "straight":
+                clientId = "CLIENT-003"; policyId = "POL-003"; claimType = "Hospitalisation"; amount = 10000;
+                description = "Hospitalisation benefit claim submitted through the client web form."; break;
+            case "manual":
+                clientId = "CLIENT-002"; policyId = "POL-002"; claimType = "Death"; amount = 250000;
+                description = "Time-sensitive death claim requiring supporting evidence and potential analyst review."; break;
+            case "validation":
+                clientId = "CLIENT-999"; policyId = "POL-003"; claimType = "Hospitalisation"; amount = 5000;
+                description = "Demo claim using an invalid client to exercise the Registration System rejection path."; break;
+        }
+    }
+
+    private void OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            selectedFiles = e.GetMultipleFiles(5);
+            foreach (var file in selectedFiles)
+            {
+                if (file.Size > 10 * 1024 * 1024)
+                {
+                    error = $"{file.Name} exceeds the 10 MB per-file limit.";
+                    selectedFiles = [];
+                    return;
+                }
+            }
+            error = null;
+        }
+        catch (Exception ex) { error = ex.Message; selectedFiles = []; }
+    }
+
+    private async Task SubmitAsync()
+    {
+        error = null; submitting = true;
+        try
+        {
+            var claim = await Client.SubmitClaimAsync(clientId, policyId, claimType, amount, incidentDate, description);
+            if (claim is not null)
+            {
+                if (selectedFiles.Count > 0)
+                    await Client.UploadDocumentsAsync(claim.Id, selectedFiles);
+                Navigation.NavigateTo($"/claims/{claim.Id}");
+            }
+        }
+        catch (Exception ex) { error = ex.Message; }
+        finally { submitting = false; }
+    }
+
+}

@@ -1,7 +1,22 @@
-bin/
-obj/
+# .NET build output
+**/bin/
+**/obj/
 .vs/
 *.user
 *.suo
-*.db
-local.settings.json
+
+# Local application data
+**/claims.db
+**/claims.db-shm
+**/claims.db-wal
+**/App_Data/
+
+# Local environment/config secrets
+.env
+**/appsettings.Local.json
+**/local.settings.*
+!**/local.settings.json
+
+# IDE / OS files
+.DS_Store
+Thumbs.db

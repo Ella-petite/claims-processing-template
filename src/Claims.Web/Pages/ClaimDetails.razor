@@ -1,0 +1,203 @@
+@page "/claims/{Id:guid}"
+@inject ClaimsClient Client
+@implements IDisposable
+
+<PageTitle>Claim Details</PageTitle>
+
+@if (claim is null)
+{
+    <div class="loading">Loading claim…</div>
+}
+else
+{
+    <div class="page-heading">
+        <div>
+            <span class="eyebrow">Claim details</span>
+            <h1>@claim.ClaimReference</h1>
+            <p>@claim.ClaimType · @claim.ClientId · @claim.PolicyId</p>
+        </div>
+        <span class="status large @StatusCss(claim.Status)">@Label(claim.Status)</span>
+    </div>
+
+    <div class="detail-grid">
+        <section class="panel">
+            <div class="panel-header"><div><h2>Claim summary</h2><span>Owned by Claims.Api / Claims System</span></div></div>
+            <dl class="detail-list">
+                <div><dt>Client</dt><dd>@claim.ClientId</dd></div>
+                <div><dt>Policy</dt><dd>@claim.PolicyId</dd></div>
+                <div><dt>Type</dt><dd>@claim.ClaimType</dd></div>
+                <div><dt>Amount</dt><dd>R @claim.Amount.ToString("N2")</dd></div>
+                <div><dt>Incident date</dt><dd>@claim.IncidentDate.ToString("dd MMM yyyy")</dd></div>
+                <div><dt>Payment reference</dt><dd>@(claim.PaymentReference ?? "—")</dd></div>
+                <div><dt>Durable instance</dt><dd class="mono">@(claim.WorkflowInstanceId ?? "Historical demo record")</dd></div>
+            </dl>
+        </section>
+
+        <section class="panel workflow-panel">
+            <div class="panel-header"><div><h2>Workflow timeline</h2><span>Durable Functions state written back to Claims.Api</span></div></div>
+            <div class="timeline">
+                @foreach (var item in claim.History.OrderByDescending(x => x.At))
+                {
+                    <div class="timeline-item">
+                        <div class="timeline-marker @StatusCss(item.Status)"></div>
+                        <div class="timeline-body"><strong>@Label(item.Status)</strong><span>@item.Source · @item.At.LocalDateTime.ToString("dd MMM HH:mm:ss")</span><p>@item.Note</p></div>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header"><div><h2>Integration results</h2><span>Responses returned by the mocked downstream systems.</span></div></div>
+            @foreach (var check in IntegrationChecks())
+            {
+                <div class="integration-row"><strong>@check.Name</strong><span>@check.Result</span></div>
+            }
+        </section>
+
+        <section class="panel">
+            <div class="panel-header"><div><h2>Documents</h2><span>Blob Storage + Document Intelligence mock</span></div></div>
+            @if (claim.Documents.Count == 0)
+            {
+                <div class="empty-state small"><p>No supporting documents uploaded.</p></div>
+            }
+            else
+            {
+                @foreach (var doc in claim.Documents)
+                {
+                    <div class="document-card">
+                        <div class="document-icon">DOC</div>
+                        <div>
+                            <strong>@doc.FileName</strong>
+                            <span>@doc.ProcessingStatus · @Math.Round(doc.Size / 1024d) KB</span>
+                            @if (doc.ExtractedFields.Count > 0)
+                            {
+                                <small>@string.Join(" · ", doc.ExtractedFields.Select(x => $"{x.Key}: {x.Value}"))</small>
+                            }
+                            <a class="document-link" href="@Client.GetDocumentDownloadUrl(claim.Id, doc.Id)">Download document</a>
+                        </div>
+                    </div>
+                }
+            }
+        </section>
+
+        <section class="panel">
+            <div class="panel-header"><div><h2>Actions</h2><span>Demo controls for the workflow</span></div></div>
+            @if (claim.Status == ClaimStatus.Submitted && string.IsNullOrWhiteSpace(claim.WorkflowInstanceId))
+            {
+                <p class="action-note">This seeded demo claim has been stored without an active workflow. Start it to publish the real `claim.submitted` event through the local Service Bus emulator.</p>
+                <button class="btn btn-primary" @onclick="StartWorkflowAsync">Start workflow</button>
+            }
+            else if (claim.Status == ClaimStatus.UnderReview)
+            {
+                <p class="action-note">This claim is waiting for a Claims Analyst decision. A real workflow would pause here until the decision event is received.</p>
+                <div class="stack-actions"><button class="btn btn-primary" @onclick="() => DecideAsync(true)">Approve claim</button><button class="btn btn-danger" @onclick="() => DecideAsync(false)">Reject claim</button></div>
+            }
+            else if (claim.Status == ClaimStatus.PaymentPending && !string.IsNullOrWhiteSpace(claim.PaymentReference))
+            {
+                <p class="action-note">Payment is pending. Auto-completion is enabled in the demo, but you can trigger the provider callback manually.</p>
+                <button class="btn btn-primary" @onclick="SimulatePaymentAsync">Simulate payment completion</button>
+            }
+            else
+            {
+                <div class="empty-state small"><p>No manual action is required at this stage.</p></div>
+            }
+            @if (!string.IsNullOrWhiteSpace(message)) { <div class="alert success">@message</div> }
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private ClaimDto? claim;
+    private PeriodicTimer? timer;
+    private CancellationTokenSource? cts;
+    private string? message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        cts = new CancellationTokenSource();
+        _ = RefreshLoopAsync(cts.Token);
+    }
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task RefreshLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (timer is not null && await timer.WaitForNextTickAsync(ct))
+            {
+                await InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        try { claim = await Client.GetClaimAsync(Id); } catch { }
+    }
+
+    private async Task StartWorkflowAsync()
+    {
+        await Client.StartWorkflowAsync(Id);
+        message = "claim.submitted has been requeued. Durable Functions should begin processing shortly.";
+        await LoadAsync();
+    }
+
+    private async Task DecideAsync(bool approved)
+    {
+        await Client.DecideAsync(Id, approved, approved ? "Approved by Claims Analyst in demo UI." : "Rejected by Claims Analyst in demo UI.");
+        message = approved ? "Approval event sent to the workflow." : "Rejection event sent to the workflow.";
+        await LoadAsync();
+    }
+
+    private IReadOnlyCollection<(string Name, string Result)> IntegrationChecks()
+    {
+        if (claim is null) return [];
+        var sources = new[] { "RegistrationSystem", "PolicyManager", "RulesEngine", "FraudDetection", "PaymentGateway" };
+        return sources
+            .Select(source => (source, result: claim.History.Where(x => x.Source == source).OrderByDescending(x => x.At).FirstOrDefault()?.Note ?? "No response recorded yet."))
+            .Select(x => (Name: x.source, Result: x.result))
+            .ToArray();
+    }
+
+    private async Task SimulatePaymentAsync()
+    {
+        if (claim?.PaymentReference is null) return;
+        await Client.SimulatePaymentCompletionAsync(claim.PaymentReference);
+        message = "Payment completion callback sent to the workflow.";
+    }
+
+    public void Dispose()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+        timer?.Dispose();
+    }
+
+    private static string Label(ClaimStatus status) => status switch
+    {
+        ClaimStatus.UnderReview => "Manual Review",
+        ClaimStatus.PaymentPending => "Payment Pending",
+        ClaimStatus.ValidatingCustomer => "Validating Customer",
+        ClaimStatus.ValidatingPolicy => "Validating Policy",
+        ClaimStatus.CheckingRules => "Checking Rules",
+        ClaimStatus.CheckingFraud => "Checking Fraud",
+        _ => status.ToString()
+    };
+
+    private static string StatusCss(ClaimStatus status) => status switch
+    {
+        ClaimStatus.Paid => "paid",
+        ClaimStatus.UnderReview => "review",
+        ClaimStatus.Rejected or ClaimStatus.Failed => "rejected",
+        ClaimStatus.Approved => "approved",
+        ClaimStatus.PaymentPending => "pending",
+        _ => "processing"
+    };
+}

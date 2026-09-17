@@ -1,6 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <Sdk Name="Aspire.AppHost.Sdk" Version="13.5.4" />
-  
+<Project Sdk="Aspire.AppHost.Sdk/13.5.4">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -8,14 +6,18 @@
     <Nullable>enable</Nullable>
     <IsAspireHost>true</IsAspireHost>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.AppHost" Version="13.5.4" />
+    <PackageReference Include="Aspire.Hosting.Azure.Functions" Version="13.5.4" />
+    <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" Version="13.5.4" />
+    <PackageReference Include="Aspire.Hosting.Azure.Storage" Version="13.5.4" />
+    <ProjectReference Include="../Claims.Web/Claims.Web.csproj" />
     <ProjectReference Include="../Claims.Api/Claims.Api.csproj" />
     <ProjectReference Include="../Claims.Bff/Claims.Bff.csproj" />
-    <ProjectReference Include="../Claims.ExternalSystems.Api/Claims.ExternalSystems.Api.csproj" />
-    <ProjectReference Include="../Claims.PaymentGateway.Api/Claims.PaymentGateway.Api.csproj" />
+    <ProjectReference Include="../Claims.Contracts/Claims.Contracts.csproj" IsAspireProjectResource="false" />
     <ProjectReference Include="../Claims.Workflow.Functions/Claims.Workflow.Functions.csproj" />
     <ProjectReference Include="../Claims.Notification.Function/Claims.Notification.Function.csproj" />
+    <ProjectReference Include="../Claims.PaymentGateway.Api/Claims.PaymentGateway.Api.csproj" />
+    <ProjectReference Include="../Claims.DocumentProcessing.Api/Claims.DocumentProcessing.Api.csproj" />
   </ItemGroup>
 </Project>

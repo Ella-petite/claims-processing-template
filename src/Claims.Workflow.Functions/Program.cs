@@ -5,4 +5,5 @@ var host = new HostBuilder()
     .ConfigureFunctionsWebApplication()
     .ConfigureServices(services => services.AddHttpClient())
     .Build();
+
 host.Run();

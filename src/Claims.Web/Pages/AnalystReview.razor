@@ -1,0 +1,56 @@
+@page "/analyst/review"
+@inject ClaimsClient Client
+
+<PageTitle>Analyst Review</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <span class="eyebrow">Claims Analyst</span>
+        <h1>Exception queue</h1>
+        <p>Analysts intervene only when automated validations or risk rules require a decision.</p>
+    </div>
+</div>
+
+@if (claims.Count == 0)
+{
+    <div class="empty-state"><h2>No claims require review</h2><p>Create a high-value or complex claim to exercise the manual-review branch.</p></div>
+}
+else
+{
+    <div class="review-grid">
+        @foreach (var claim in claims)
+        {
+            <article class="review-card">
+                <div class="review-card-top"><span class="status review">Manual Review</span><strong>@claim.ClaimReference</strong></div>
+                <h2>@claim.ClaimType</h2>
+                <p>@claim.ClientId · @claim.PolicyId</p>
+                <div class="review-amount">R @claim.Amount.ToString("N2")</div>
+                <div class="review-reason">@(claim.History.LastOrDefault()?.Note ?? "Review required")</div>
+                <div class="review-actions">
+                    <a class="btn btn-secondary" href="/claims/@claim.Id">Inspect</a>
+                    @if (!string.IsNullOrWhiteSpace(claim.WorkflowInstanceId))
+                    {
+                        <button class="btn btn-primary" @onclick="() => DecideAsync(claim.Id, true)">Approve</button>
+                        <button class="btn btn-danger" @onclick="() => DecideAsync(claim.Id, false)">Reject</button>
+                    }
+                    else
+                    {
+                        <span class="demo-note">Historical seeded record — submit a new claim to exercise the live workflow.</span>
+                    }
+                </div>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private List<ClaimDto> claims = [];
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => claims = (await Client.GetClaimsAsync()).Where(x => x.Status == ClaimStatus.UnderReview).ToList();
+    private async Task DecideAsync(Guid id, bool approved)
+    {
+        await Client.DecideAsync(id, approved, approved ? "Approved after analyst review." : "Rejected after analyst review.");
+        await LoadAsync();
+    }
+}

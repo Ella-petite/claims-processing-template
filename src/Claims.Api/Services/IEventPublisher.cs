@@ -1,6 +1,7 @@
 namespace Claims.Api.Services;
 
-public interface IEventPublisher
+public interface IEventPublisher : IAsyncDisposable
 {
-    Task PublishAsync<T>(string subject, T payload, CancellationToken cancellationToken = default);
+    bool IsConfigured { get; }
+    Task PublishSerializedAsync(string subject, string serializedPayload, CancellationToken cancellationToken = default);
 }

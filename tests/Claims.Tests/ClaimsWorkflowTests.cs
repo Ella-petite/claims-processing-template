@@ -8,7 +8,7 @@ public class ClaimsWorkflowTests
     [Fact]
     public void NewClaimCanBeRepresentedAsSubmitted()
     {
-        var claim = new ClaimDto(Guid.NewGuid(), "CLIENT-001", "POL-001", "DEATH", 10000m, DateTime.UtcNow, "Example", ClaimStatus.Submitted, null, [], []);
+        var claim = new ClaimDto(Guid.NewGuid(), "CLM-001", "CLIENT-001", "POL-001", "DEATH", 10000m, DateTime.UtcNow, "Example", ClaimStatus.Submitted, null, null, [], []);
         Assert.Equal(ClaimStatus.Submitted, claim.Status);
     }
 

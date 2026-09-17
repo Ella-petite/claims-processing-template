@@ -1,0 +1,170 @@
+@page "/"
+@inject ClaimsClient Client
+@implements IDisposable
+
+<PageTitle>Claims Dashboard</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <span class="eyebrow">Overview</span>
+        <h1>Claims Dashboard</h1>
+        <p>One view of the claim journey across validation, review, payment and notification.</p>
+    </div>
+    <a href="/claims/new" class="btn btn-primary">+ Submit a claim</a>
+</div>
+
+@if (summary is null)
+{
+    <div class="loading">Loading dashboard…</div>
+}
+else
+{
+    <div class="stat-grid">
+        <div class="stat-card"><span>Total claims</span><strong>@summary.total</strong><small>All demo claims</small></div>
+        <div class="stat-card warning"><span>Manual review</span><strong>@summary.underReview</strong><small>Claims Analyst queue</small></div>
+        <div class="stat-card"><span>Processing</span><strong>@(summary.submitted + summary.approved + summary.paymentPending)</strong><small>Across workflow stages</small></div>
+        <div class="stat-card success"><span>Paid</span><strong>@summary.paid</strong><small>Completed payments</small></div>
+    </div>
+
+    <div class="dashboard-grid">
+        <section class="panel panel-wide">
+            <div class="panel-header">
+                <div><h2>Claims</h2><span>Live data from Claims.Bff → Claims.Api</span></div>
+                <button class="btn btn-secondary" @onclick="LoadAsync">Refresh</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Claim</th><th>Client</th><th>Type</th><th>Amount</th><th>Status</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var claim in claims)
+                        {
+                            <tr>
+                                <td><strong>@claim.ClaimReference</strong></td>
+                                <td>@claim.ClientId</td>
+                                <td>@claim.ClaimType</td>
+                                <td>R @claim.Amount.ToString("N2")</td>
+                                <td><span class="status @StatusCss(claim.Status)">@Label(claim.Status)</span></td>
+                                <td><a href="/claims/@claim.Id">View</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header"><div><h2>Service health</h2><span>Local mocked environment</span></div></div>
+            @foreach (var service in services)
+            {
+                <div class="service-row"><span>@service.name</span><span class="service-status">@service.status</span></div>
+            }
+        </section>
+
+        <section class="panel panel-wide">
+            <div class="panel-header"><div><h2>Latest notifications</h2><span>Claim events consumed by Notification Function</span></div></div>
+            @if (notifications.Count == 0)
+            {
+                <div class="empty-state small"><p>No notifications yet. Submit or update a claim to generate events.</p></div>
+            }
+            else
+            {
+                <div class="notification-list">
+                    @foreach (var item in notifications.Take(6))
+                    {
+                        <div class="notification-item"><div class="notification-icon">↗</div><div><strong>@item.ClaimReference</strong><p>@item.Message</p><small>@item.At.LocalDateTime.ToString("dd MMM yyyy HH:mm")</small></div></div>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="panel workflow-map">
+            <div class="panel-header"><div><h2>Claims journey</h2><span>Architecture flow represented locally</span></div></div>
+            <div class="flow-step"><b>1</b><span>Claims UI</span></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-step"><b>2</b><span>Claims.Bff</span></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-step"><b>3</b><span>Claims.Api</span></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-step highlight"><b>4</b><span>Azure Service Bus Emulator</span></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-step"><b>5</b><span>Durable Functions</span></div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-step"><b>6</b><span>External systems → Payment → Notification</span></div>
+        </section>
+    </div>
+}
+
+@code {
+    private List<ClaimDto> claims = [];
+    private ClaimsClient.SummaryDto? summary;
+    private List<ClaimsClient.ServiceHealth> services = [];
+    private List<NotificationEvent> notifications = [];
+    private PeriodicTimer? timer;
+    private CancellationTokenSource? timerCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        timerCts = new CancellationTokenSource();
+        _ = RefreshLoopAsync(timerCts.Token);
+    }
+
+    private async Task RefreshLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (timer is not null && await timer.WaitForNextTickAsync(ct))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadAsync();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            claims = await Client.GetClaimsAsync();
+            summary = await Client.GetSummaryAsync();
+            services = await Client.GetServicesAsync();
+            notifications = await Client.GetNotificationsAsync();
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        timerCts?.Cancel();
+        timer?.Dispose();
+        timerCts?.Dispose();
+    }
+
+    private static string Label(ClaimStatus status) => status switch
+    {
+        ClaimStatus.UnderReview => "Manual Review",
+        ClaimStatus.PaymentPending => "Payment Pending",
+        ClaimStatus.ValidatingCustomer => "Validating Customer",
+        ClaimStatus.ValidatingPolicy => "Validating Policy",
+        ClaimStatus.CheckingRules => "Checking Rules",
+        ClaimStatus.CheckingFraud => "Checking Fraud",
+        _ => status.ToString()
+    };
+
+    private static string StatusCss(ClaimStatus status) => status switch
+    {
+        ClaimStatus.Paid => "paid",
+        ClaimStatus.UnderReview => "review",
+        ClaimStatus.Rejected or ClaimStatus.Failed => "rejected",
+        ClaimStatus.Approved => "approved",
+        ClaimStatus.PaymentPending => "pending",
+        _ => "processing"
+    };
+}
