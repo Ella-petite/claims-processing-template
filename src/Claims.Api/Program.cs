@@ -331,7 +331,25 @@ static async Task InitialiseDatabaseAsync(IServiceProvider services)
     using var scope = services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<ClaimsDbContext>();
     await db.Database.EnsureCreatedAsync();
+    await EnsureSchemaUpToDateAsync(db);
     await SeedDemoClaimsAsync(db);
+}
+
+static async Task EnsureSchemaUpToDateAsync(ClaimsDbContext db)
+{
+    var statements = new[]
+    {
+        "ALTER TABLE Claims ADD COLUMN PaymentReference TEXT NULL;",
+        "ALTER TABLE Claims ADD COLUMN WorkflowInstanceId TEXT NULL;",
+        "ALTER TABLE ClaimDocuments ADD COLUMN ExtractedFieldsJson TEXT NULL;",
+        "ALTER TABLE ClaimHistory ADD COLUMN CorrelationId TEXT NULL;"
+    };
+
+    foreach (var sql in statements)
+    {
+        try { await db.Database.ExecuteSqlRawAsync(sql); }
+        catch { /* Column already exists */ }
+    }
 }
 
 static ClaimDto ToDto(ClaimEntity entity) => new(
